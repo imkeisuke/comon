@@ -1,4 +1,4 @@
-# Comon　(Common Compression)
+# Comon(Common Compression)
 ![Static Badge](https://img.shields.io/badge/License-MIT-green)
 
 圧縮ツール
