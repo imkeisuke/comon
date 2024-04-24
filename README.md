@@ -3,6 +3,7 @@
 ![rs report](https://rust-reportcard.xuri.me/badge/github.com/imkeisuke/comon)
 [![Coverage Status](https://coveralls.io/repos/github/imkeisuke/comon/badge.svg?branch=main)](https://coveralls.io/github/imkeisuke/comon?branch=main)
 [![build](https://github.com/imkeisuke/comon/actions/workflows/build.yaml/badge.svg)](https://github.com/imkeisuke/comon/actions/workflows/build.yaml)
+
 各種圧縮フォーマットを統一的なインタフェースで扱う
 
 ## Description
