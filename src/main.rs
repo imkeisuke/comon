@@ -1,5 +1,5 @@
 fn hello() -> String {
-    "Hello, world!".to_string()
+    "Hello, world!!".to_string()
 }
 fn main() {
     println!("{}", hello());
@@ -11,6 +11,6 @@ mod tests {
     
     #[test]
     fn test_hello() {
-        assert_eq!(hello(), "Hello, world!");
+        assert_eq!(hello(), "Hello, world!!");
     }
 }
