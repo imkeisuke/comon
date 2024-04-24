@@ -1,5 +1,6 @@
 # Comon(Common Compression)
 ![Static Badge](https://img.shields.io/badge/License-MIT-blue)
+<a href='https://coveralls.io/github/imkeisuke/Comon?branch=main'><img src='https://coveralls.io/repos/github/imkeisuke/Comon/badge.svg?branch=main' alt='Coverage Status' /></a>
 
 各種圧縮フォーマットを統一的なインタフェースで扱う
 
