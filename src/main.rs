@@ -29,7 +29,7 @@ mod tests {
         assert_eq!(opts.args, vec![
             PathBuf::from("src"),
             PathBuf::from("LICENSE"),
-            PathBuf::from("READEME.md"),
+            PathBuf::from("README.md"),
             PathBuf::from("Cargo.toml")
         ]);
     }
