@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use clap::{Parser, ValueEnum};
 //コマンドラインツールのオプション解析
-#[derive(Parser, Debug)]
+
 pub struct CliOpts {
   //MODE
   #[arg(short,long,default_value_t = RunMode::Auto, value_name = "MODE", required = false, ignore_case = true, value_enum, help = "Mode of operation.")]
