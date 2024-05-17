@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 use clap::{Parser, ValueEnum};
-pub type Result<T> = std::result::Result<T, ToteError>;
 
 #[derive(Parser, Debug)]
 #[clap(
