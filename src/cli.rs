@@ -1,5 +1,12 @@
 use std::path::PathBuf;
 use clap::{Parser, ValueEnum};
+pub type Result<T> = std::result::Result<T, ToteError>;
+
+#[derive(Parser, Debug)]
+#[clap(
+    version, author, about,
+    arg_required_else_help = true,
+)]
 //コマンドラインツールのオプション解析
 
 pub struct CliOpts {
