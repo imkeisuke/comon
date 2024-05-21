@@ -15,7 +15,7 @@ mod tests {
     #[test]
     fn test_run() {
         let opts = CliOpts::parse_from(&[
-            "totebag_test",
+            "comon_test",
             "-o", "test.zip",
             "src",
             "LICENSE",
