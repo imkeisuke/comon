@@ -1,6 +1,5 @@
-use std::path::PathBuf;
 use clap::Parser;
-use cli::{RunMode,CliOpts};
+use cli::{CliOpts};
 
 mod cli;
 
@@ -11,7 +10,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    use cli::RunMode;
+    use std::path::PathBuf;
     #[test]
     fn test_run() {
         let opts = CliOpts::parse_from(&[
