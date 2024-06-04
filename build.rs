@@ -17,10 +17,10 @@ fn main() {
 let mut app = CliOpts::command();
 app.set_bin_name(APP_NAME);
 let outdir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/completions/");
-generate(Shell::Bash, &mut app, &outdir, "bash/totebag");
-generate(Shell::Elvish, &mut app, &outdir, "elvish/totebag");
-generate(Shell::Fish, &mut app, &outdir, "fish/totebag");
-generate(Shell::PowerShell, &mut app, &outdir, "powershell/totebag");
-generate(Shell::Zsh, &mut app, &outdir, "zsh/_totebag");
+generate(Shell::Bash, &mut app, &outdir, "bash/comon");
+generate(Shell::Elvish, &mut app, &outdir, "elvish/comon");
+generate(Shell::Fish, &mut app, &outdir, "fish/comon");
+generate(Shell::PowerShell, &mut app, &outdir, "powershell/comon");
+generate(Shell::Zsh, &mut app, &outdir, "zsh/_comon");
 }
 
