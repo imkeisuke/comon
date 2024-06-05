@@ -8,7 +8,7 @@ const APP_NAME: &str = "comon";
 fn generate(s: Shell, app: &mut Command, outdir: &Path, file: &str){
   let destfile = outdir.join(file);
   println!("dest: {}", destfile.display());
-  std::fs::create_dir_all(destfile.parent(),unwrap()),unwrap();
+  std::fs::create_dir_all(destfile.parent().unwrap()).unwrap();
   let mut dest = File::create(destfile).unwrap();
   clap_complete::generate(s, app, APP_NAME, &mut dest);
 }
