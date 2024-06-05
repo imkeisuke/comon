@@ -12,7 +12,7 @@ jobs:
     # プルリクエストがマージされた場合のみに実行する．
     if: startsWith(github.head_ref, 'release/v') && github.event.pull_request.merged == true
     outputs:
-      appname: totebag
+      appname: comon
       tag: ${{ steps.vars.outputs.tag }}
       upload_url: ${{ steps.create_release.outputs.upload_url }}
     steps:
@@ -153,7 +153,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          # ${{ github.repository }} = tamada/totebag
+          # ${{ github.repository }} = imkeisuke/comon
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=raw,value=latest
