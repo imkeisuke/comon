@@ -1,26 +1,20 @@
-FROM alpine:3.16 AS builder
-
-ARG VERSION=0.1.0
+FROM rust:1-bullseye AS builder
 ARG TARGETPLATFORM
-ARG PLATFORM=${TARGETPLATFORM#linux/}
+WORKDIR /work/comon
 
-WORKDIR /home/comon
+COPY . .
+RUN cargo build --release 
 
-RUN apk add --no-cache curl tar gzip \
- && curl -LO https://github.com/imkeisuke/comon/releases/download/v${VERSION}/comon-${VERSION}_linux_${PLATFORM}.tar.gz \
- && tar xvfz comon-${VERSION}_linux_${PLATFORM}.tar.gz 
-
-FROM alpine:3.16
-
+FROM debian:bullseye-slim
 ARG VERSION=0.1.0
 
-LABEL org.opencontainers.image.source https://github.com/imkeisuke/comon
-
-RUN  apk add --no-cache libgcc musl-dev \
-  && adduser -D nonroot \
-  && mkdir -p /workdir
-
-COPY --from=builder /home/comon/comon-${VERSION}/comon /opt/comon/comon
+LABEL org.opencontainers.image.source https://github.com/imkeisuke/comon ¥
+      org.opencontainers.image.version=${VERSION} ¥
+      org.opencontainers.image.title=comon ¥
+      org.opencontainers.image.description="comon is "
+RUN  adduser --disabled-password --disabled-login --home /workdir nonroot ¥
+     && mkdir -p /workdir
+COPY --from=builder /work/comon/comon/release/comon /opt/comon/comon
 
 WORKDIR /workdir
 USER nonroot
