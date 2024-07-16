@@ -14,7 +14,7 @@ LABEL org.opencontainers.image.source https://github.com/imkeisuke/comon \
       org.opencontainers.image.description="comon is "
 RUN  adduser --disabled-password --disabled-login --home /workdir nonroot \
      && mkdir -p /workdir
-COPY --from=builder /work/comon/comon/release/comon /opt/comon/comon
+COPY --from=builder /work/comon/target/release/comon /opt/comon/comon
 
 WORKDIR /workdir
 USER nonroot
