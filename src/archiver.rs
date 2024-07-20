@@ -1,5 +1,5 @@
 use std::fs::{create_dir_all, File};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::archiver::lha::LhaArchiver;
 use crate::archiver::rar::RarArchiver;
@@ -26,25 +26,23 @@ pub trait Archiver {
 pub fn create_archiver(dest: &PathBuf) -> Result<Box<dyn Archiver>> {
     let format = find_format(dest.file_name());
     match format {
-        Ok(format) => {
-            return match format {
-                Format::Zip => Ok(Box::new(ZipArchiver {})),
-                Format::Tar => Ok(Box::new(TarArchiver {})),
-                Format::TarGz => Ok(Box::new(TarGzArchiver {})),
-                Format::TarBz2 => Ok(Box::new(TarBz2Archiver {})),
-                Format::TarXz => Ok(Box::new(TarXzArchiver {})),
-                Format::TarZstd => Ok(Box::new(TarZstdArchiver {})),
-                Format::LHA => Ok(Box::new(LhaArchiver {})),
-                Format::Rar => Ok(Box::new(RarArchiver {})),
-                Format::SevenZ => Ok(Box::new(SevenZArchiver {})),
-                _ => Err(ToteError::UnknownFormat(format.to_string())),
-            }
-        }
-        Err(msg) => Err(msg),
+        Ok(fmt) => Ok(match fmt {
+            Format::Zip => Box::new(ZipArchiver {}),
+            Format::Tar => Box::new(TarArchiver {}),
+            Format::TarGz => Box::new(TarGzArchiver {}),
+            Format::TarBz2 => Box::new(TarBz2Archiver {}),
+            Format::TarXz => Box::new(TarXzArchiver {}),
+            Format::TarZstd => Box::new(TarZstdArchiver {}),
+            Format::LHA => Box::new(LhaArchiver {}),
+            Format::Rar => Box::new(RarArchiver {}),
+            Format::SevenZ => Box::new(SevenZArchiver {}),
+            _ => return Err(ToteError::UnknownFormat(fmt.to_string())),
+        }),
+        Err(e) => Err(e),
     }
 }
 
-pub fn archiver_info(archiver: &Box<dyn Archiver>, opts: &ArchiverOpts) -> String {
+pub fn archiver_info(archiver: &dyn Archiver, opts: &ArchiverOpts) -> String {
     format!(
         "Format: {:?}\nDestination: {:?}\nTargets: {:?}",
         archiver.format(),
@@ -67,11 +65,9 @@ pub struct ArchiverOpts {
 
 impl ArchiverOpts {
     pub fn new(opts: &CliOpts) -> Self {
-        let args = opts.args.clone();
-        let dest = opts.output.clone().unwrap_or_else(|| PathBuf::from("."));
         ArchiverOpts {
-            dest: dest,
-            targets: args,
+            dest: opts.output.clone().unwrap_or_else(|| PathBuf::from(".")),
+            targets: opts.args.clone(),
             overwrite: opts.overwrite,
             recursive: !opts.no_recursive,
             v: create_verboser(opts.verbose),
@@ -99,31 +95,21 @@ impl ArchiverOpts {
         self.targets.clone()
     }
 
-    /// Simply return the path for destination.
     pub fn dest_path(&self) -> PathBuf {
         self.dest.clone()
     }
 
-    /// Returns the destination file for the archive with opening it and create the parent directories.
-    /// If the path for destination is a directory or exists and overwrite is false,
-    /// this function returns an error.
     pub fn destination(&self) -> Result<File> {
         let p = self.dest.as_path();
-        print!("{:?}: {}\n", p, p.exists());
         if p.is_file() && p.exists() && !self.overwrite {
             return Err(ToteError::FileExists(self.dest.clone()));
         }
         if let Some(parent) = p.parent() {
             if !parent.exists() {
-                if let Err(e) = create_dir_all(parent) {
-                    return Err(ToteError::IO(e));
-                }
+                create_dir_all(parent).map_err(ToteError::IO)?;
             }
         }
-        match File::create(self.dest.as_path()) {
-            Ok(f) => Ok(f),
-            Err(e) => Err(ToteError::IO(e)),
-        }
+        File::create(p).map_err(ToteError::IO)
     }
 }
 
@@ -133,53 +119,30 @@ mod tests {
 
     #[test]
     fn test_archiver() {
-        let a1 = create_archiver(&PathBuf::from("results/test.tar"));
-        if let Ok(f) = a1 {
-            assert_eq!(f.format(), Format::Tar);
-        } else {
-            assert!(false);
+        let formats = [
+            ("results/test.tar", Format::Tar),
+            ("results/test.tar.gz", Format::TarGz),
+            ("results/test.tar.bz2", Format::TarBz2),
+            ("results/test.zip", Format::Zip),
+            ("results/test.rar", Format::Rar),
+            ("results/test.tar.xz", Format::TarXz),
+            ("results/test.7z", Format::SevenZ),
+            ("results/test.tar.zst", Format::TarZstd),
+            ("results/test.lha", Format::LHA),
+        ];
+
+        for (path, expected_format) in formats.iter() {
+            let archiver = create_archiver(&PathBuf::from(*path));
+            assert!(archiver.is_ok());
+            assert_eq!(archiver.unwrap().format(), *expected_format);
         }
 
-        let a2 = create_archiver(&PathBuf::from("results/test.tar.gz"));
-        assert!(a2.is_ok());
-        assert_eq!(a2.unwrap().format(), Format::TarGz);
-
-        let a3 = create_archiver(&PathBuf::from("results/test.tar.bz2"));
-        assert!(a3.is_ok());
-        assert_eq!(a3.unwrap().format(), Format::TarBz2);
-
-        let a4 = create_archiver(&PathBuf::from("results/test.zip"));
-        assert!(a4.is_ok());
-        assert_eq!(a4.unwrap().format(), Format::Zip);
-
-        let a5 = create_archiver(&PathBuf::from("results/test.rar"));
-        assert!(a5.is_ok());
-        assert_eq!(a5.unwrap().format(), Format::Rar);
-
-        let a6 = create_archiver(&PathBuf::from("results/test.tar.xz"));
-        assert!(a6.is_ok());
-        assert_eq!(a6.unwrap().format(), Format::TarXz);
-
-        let a7 = create_archiver(&PathBuf::from("results/test.7z"));
-        assert!(a7.is_ok());
-        assert_eq!(a7.unwrap().format(), Format::SevenZ);
-
-        let a8 = create_archiver(&PathBuf::from("results/test.tar.zst"));
-        assert!(a8.is_ok());
-        assert_eq!(a8.unwrap().format(), Format::TarZstd);
-
-        let a9 = create_archiver(&PathBuf::from("results/test.lha"));
-        assert!(a9.is_ok());
-        assert_eq!(a9.unwrap().format(), Format::LHA);
-
-        let a10 = create_archiver(&PathBuf::from("results/test.unknown"));
-        assert!(a10.is_err());
-        if let Err(e) = a10 {
-            if let ToteError::UnknownFormat(msg) = e {
-                assert_eq!(msg, "test.unknown: unknown format".to_string());
-            } else {
-                assert!(false);
-            }
+        let unknown_format = create_archiver(&PathBuf::from("results/test.unknown"));
+        assert!(unknown_format.is_err());
+        if let Err(ToteError::UnknownFormat(msg)) = unknown_format {
+            assert_eq!(msg, "test.unknown: unknown format".to_string());
+        } else {
+            assert!(false);
         }
     }
 }
