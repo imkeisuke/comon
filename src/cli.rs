@@ -23,6 +23,8 @@ pub struct CliOpts {
   pub verbose: bool,
   #[arg(value_name = "ARGUMENTS", help = "List of files or direstories to be processed.", long_help = "extract mode: archive files to be extracted. archive mode: files to be archived. auto mode: if the arguments have archive files, it will extract them. Otherwise, it will archive the files.")]
   pub args: Vec<PathBuf>,
+  #[arg(short, long, help = "Extract to a directory named after the archive file.")]
+  pub to_archive_name_dir: bool,
 }
 #[derive(Debug, Clone, ValueEnum, PartialEq)]
 pub enum RunMode {
@@ -37,4 +39,3 @@ pub enum ToteError {
     UnknownFormat(String),
     FileExists(PathBuf),
 }
-
