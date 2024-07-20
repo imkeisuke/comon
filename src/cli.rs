@@ -30,3 +30,11 @@ pub enum RunMode {
   Archive, 
   Extract,
 }
+
+#[derive(Debug)]
+pub enum ToteError {
+    IO(std::io::Error),
+    UnknownFormat(String),
+    FileExists(PathBuf),
+}
+
