@@ -1,5 +1,5 @@
 // format.rs
-use std::path::Path;
+use std::ffi::OsStr;
 
 #[derive(Debug, PartialEq)]
 pub enum Format {
@@ -15,8 +15,8 @@ pub enum Format {
     Unknown(String),
 }
 
-pub fn find_format(file_name: Option<&std::ffi::OsStr>) -> Result<Format, ToteError> {
-    if let Some(ext) = file_name.and_then(|s| s.to_str()).map(|s| s.split('.').last()) {
+pub fn find_format(file_name: Option<&OsStr>) -> Result<Format, ToteError> {
+    if let Some(ext) = file_name.and_then(|s| s.to_str()).and_then(|s| s.split('.').last()) {
         match ext.to_lowercase().as_str() {
             "zip" => Ok(Format::Zip),
             "tar" => Ok(Format::Tar),
