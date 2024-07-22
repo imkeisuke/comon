@@ -1,29 +1,29 @@
-use std::fmt;
 
-pub trait Verboser: fmt::Debug {
-    fn log(&self, msg: &str);
+pub trait Verboser {
+    fn verbose(&self, message: String);
 }
 
-#[derive(Debug)]
-pub struct SimpleVerboser;
-
-impl Verboser for SimpleVerboser {
-    fn log(&self, msg: &str) {
-        println!("{}", msg);
-    }
+struct EmptyVerboser {
 }
 
-#[derive(Debug)]
-pub struct QuietVerboser;
-
-impl Verboser for QuietVerboser {
-    fn log(&self, _msg: &str) {}
+struct SimpleVerboser {
 }
 
 pub fn create_verboser(verbose: bool) -> Box<dyn Verboser> {
     if verbose {
-        Box::new(SimpleVerboser)
+        Box::new(SimpleVerboser{})
     } else {
-        Box::new(QuietVerboser)
+        Box::new(EmptyVerboser{})
+    }
+}
+
+impl Verboser for EmptyVerboser {
+    fn verbose(&self, _msg: String) {
+    }
+}
+
+impl Verboser for SimpleVerboser {
+    fn verbose(&self, message: String) {
+        println!("{}", message);
     }
 }
