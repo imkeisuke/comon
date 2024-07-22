@@ -1,27 +1,42 @@
+// src/tote_error.rs
 use std::fmt;
 use std::io;
+use zip::result::ZipError;
+use walkdir::Error as WalkDirError;
 
 #[derive(Debug)]
 pub enum ToteError {
-    IO(io::Error),
+    IoError(io::Error),
+    ZipError(ZipError),
+    WalkDirError(WalkDirError),
     UnknownFormat(String),
-    FileExists(String),
 }
 
 impl fmt::Display for ToteError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ToteError::IO(e) => write!(f, "IO error: {}", e),
-            ToteError::UnknownFormat(msg) => write!(f, "Unknown format: {}", msg),
-            ToteError::FileExists(msg) => write!(f, "File exists: {}", msg),
+            ToteError::IoError(err) => write!(f, "IO error: {}", err),
+            ToteError::ZipError(err) => write!(f, "ZIP error: {}", err),
+            ToteError::WalkDirError(err) => write!(f, "WalkDir error: {}", err),
+            ToteError::UnknownFormat(err) => write!(f, "Unknown format: {}", err),
         }
     }
 }
 
 impl From<io::Error> for ToteError {
     fn from(err: io::Error) -> ToteError {
-        ToteError::IO(err)
+        ToteError::IoError(err)
     }
 }
 
-impl std::error::Error for ToteError {}
+impl From<ZipError> for ToteError {
+    fn from(err: ZipError) -> ToteError {
+        ToteError::ZipError(err)
+    }
+}
+
+impl From<WalkDirError> for ToteError {
+    fn from(err: WalkDirError) -> ToteError {
+        ToteError::WalkDirError(err)
+    }
+}
