@@ -1,9 +1,10 @@
 use std::fmt;
+use zip::ZipError;
 
 #[derive(Debug)]
 pub enum ToteError {
     IoError(std::io::Error),
-    ZipError(zip::ZipError),
+    ZipError(ZipError),
     FormatError(String),
     UnknownFormat(String),
 }
@@ -25,8 +26,8 @@ impl From<std::io::Error> for ToteError {
     }
 }
 
-impl From<zip::ZipError> for ToteError {
-    fn from(error: zip::ZipError) -> Self {
+impl From<ZipError> for ToteError {
+    fn from(error: ZipError) -> Self {
         ToteError::ZipError(error)
     }
 }
