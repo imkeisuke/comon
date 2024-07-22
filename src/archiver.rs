@@ -1,185 +1,115 @@
-use std::fs::{create_dir_all, File};
 use std::path::PathBuf;
+use clap::{Parser, ValueEnum};
 
-use crate::archiver::lha::LhaArchiver;
-use crate::archiver::rar::RarArchiver;
-use crate::archiver::sevenz::SevenZArchiver;
-use crate::archiver::tar::{TarArchiver, TarBz2Archiver, TarGzArchiver, TarXzArchiver, TarZstdArchiver};
-use crate::archiver::zip::ZipArchiver;
-use crate::cli::{Result, ToteError};
-use crate::format::{find_format, Format};
-use crate::verboser::{create_verboser, Verboser};
-use crate::CliOpts;
+pub type Result<T> = std::result::Result<T, ToteError>;
 
-mod lha;
-mod os;
-mod rar;
-mod sevenz;
-mod tar;
-mod zip;
-
-pub trait Archiver {
-    fn perform(&self, inout: &ArchiverOpts) -> Result<()>;
-    fn format(&self) -> Format;
-}
-
-pub fn create_archiver(dest: &PathBuf) -> Result<Box<dyn Archiver>> {
-    let format = find_format(dest.file_name());
-    match format {
-        Ok(format) => {
-            return match format {
-                Format::Zip => Ok(Box::new(ZipArchiver {})),
-                Format::Tar => Ok(Box::new(TarArchiver {})),
-                Format::TarGz => Ok(Box::new(TarGzArchiver {})),
-                Format::TarBz2 => Ok(Box::new(TarBz2Archiver {})),
-                Format::TarXz => Ok(Box::new(TarXzArchiver {})),
-                Format::TarZstd => Ok(Box::new(TarZstdArchiver {})),
-                Format::LHA => Ok(Box::new(LhaArchiver {})),
-                Format::Rar => Ok(Box::new(RarArchiver {})),
-                Format::SevenZ => Ok(Box::new(SevenZArchiver {})),
-                _ => Err(ToteError::UnknownFormat(format.to_string())),
-            }
-        }
-        Err(msg) => Err(msg),
-    }
-}
-
-pub fn archiver_info(archiver: &Box<dyn Archiver>, opts: &ArchiverOpts) -> String {
-    format!(
-        "Format: {:?}\nDestination: {:?}\nTargets: {:?}",
-        archiver.format(),
-        opts.dest_path(),
-        opts.targets()
-            .iter()
-            .map(|item| item.to_str().unwrap())
-            .collect::<Vec<_>>()
-            .join(", ")
-    )
-}
-
-pub struct ArchiverOpts {
-    pub dest: PathBuf,
-    pub targets: Vec<PathBuf>,
+#[derive(Parser, Debug)]
+#[clap(
+    version, author, about,
+    arg_required_else_help = true,
+)]
+pub struct CliOpts {
+    #[clap(short = 'm', long = "mode", default_value_t = RunMode::Auto, value_name = "MODE", required = false, ignore_case = true, value_enum, help = "Mode of operation.")]
+    pub mode: RunMode,
+    #[clap(short = 'o', short_alias = 'd', long = "output", alias = "dest", value_name = "DEST", required = false, help = "Output file in archive mode, or output directory in extraction mode")]
+    pub output: Option<PathBuf>,
+    #[clap(long = "to-archive-name-dir", help = "extract files to DEST/ARCHIVE_NAME directory (extract mode).", default_value_t = false)]
+    pub to_archive_name_dir: bool,
+    #[clap(short = 'n', long = "no-recursive", help = "No recursive directory (archive mode).", default_value_t = false)]
+    pub no_recursive: bool,
+    #[clap(short = 'v', long = "verbose", help = "Display verbose output.", default_value_t = false)]
+    pub verbose: bool,
+    #[clap(long, help = "Overwrite existing files.")]
     pub overwrite: bool,
-    pub recursive: bool,
-    pub v: Box<dyn Verboser>,
+    #[clap(value_name = "ARGUMENTS", help = "List of files or directories to be processed.")]
+    pub args: Vec<PathBuf>,
 }
 
-impl ArchiverOpts {
-    pub fn new(opts: &CliOpts) -> Self {
-        let args = opts.args.clone();
-        let dest = opts.output.clone().unwrap_or_else(|| PathBuf::from("."));
-        ArchiverOpts {
-            dest: dest,
-            targets: args,
-            overwrite: opts.overwrite,
-            recursive: !opts.no_recursive,
-            v: create_verboser(opts.verbose),
+impl CliOpts {
+    pub fn run_mode(&mut self) -> Result<RunMode> {
+        if self.args.len() == 0 {
+            return Err(ToteError::NoArgumentsGiven)
+        }
+        if self.mode == RunMode::Auto {
+            if is_all_args_archives(&self.args) {
+                self.mode = RunMode::Extract;
+                Ok(RunMode::Extract)
+            } else {
+                self.mode = RunMode::Archive;
+                Ok(RunMode::Archive)
+            }
+        } else {
+            Ok(self.mode)
         }
     }
+}
 
-    #[cfg(test)]
-    pub fn create(
-        dest: PathBuf,
-        targets: Vec<PathBuf>,
-        overwrite: bool,
-        recursive: bool,
-        verbose: bool,
-    ) -> Self {
-        ArchiverOpts {
-            dest,
-            targets,
-            overwrite,
-            recursive,
-            v: create_verboser(verbose),
-        }
-    }
-
-    pub fn targets(&self) -> Vec<PathBuf> {
-        self.targets.clone()
-    }
-
-    /// Simply return the path for destination.
-    pub fn dest_path(&self) -> PathBuf {
-        self.dest.clone()
-    }
-
-    /// Returns the destination file for the archive with opening it and create the parent directories.
-    /// If the path for destination is a directory or exists and overwrite is false,
-    /// this function returns an error.
-    pub fn destination(&self) -> Result<File> {
-        let p = self.dest.as_path();
-        print!("{:?}: {}\n", p, p.exists());
-        if p.is_file() && p.exists() && !self.overwrite {
-            return Err(ToteError::FileExists(self.dest.clone()));
-        }
-        if let Some(parent) = p.parent() {
-            if !parent.exists() {
-                if let Err(e) = create_dir_all(parent) {
-                    return Err(ToteError::IO(e));
-                }
+fn is_all_args_archives(args: &[PathBuf]) -> bool {
+    args.iter().all(|arg| {
+        let name = arg.to_str().unwrap().to_lowercase();
+        let exts = vec![".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".rar", ".jar", ".war", ".ear", "7z", ];
+        for ext in exts.iter() {
+            if name.ends_with(ext) {
+                return true
             }
         }
-        match File::create(self.dest.as_path()) {
-            Ok(f) => Ok(f),
-            Err(e) => Err(ToteError::IO(e)),
-        }
-    }
+        return false
+    })
+}
+
+#[derive(Debug, Clone, ValueEnum, PartialEq, Copy)]
+pub enum RunMode {
+    Auto,
+    Archive,
+    Extract,
+    List,
+}
+
+#[derive(Debug)]
+pub enum ToteError {
+    NoArgumentsGiven,
+    FileNotFound(PathBuf),
+    FileExists(PathBuf),
+    IO(std::io::Error),
+    Archiver(String),
+    UnsupportedFormat(String),
+    UnknownFormat(String),
+    Unknown(String),
+    Fatal(Box<dyn std::error::Error>)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+    use clap::Parser;
+
     use super::*;
 
     #[test]
-    fn test_archiver() {
-        let a1 = create_archiver(&PathBuf::from("results/test.tar"));
-        if let Ok(f) = a1 {
-            assert_eq!(f.format(), Format::Tar);
-        } else {
-            assert!(false);
-        }
+    fn test_find_mode() {
+        let mut cli1 = CliOpts::parse_from(&["totebag_test", "src", "LICENSE", "README.md", "Cargo.toml"]);
+        let r1 = cli1.run_mode();
+        assert!(r1.is_ok());
+        assert_eq!(r1.unwrap(), RunMode::Archive);
 
-        let a2 = create_archiver(&PathBuf::from("results/test.tar.gz"));
-        assert!(a2.is_ok());
-        assert_eq!(a2.unwrap().format(), Format::TarGz);
+        let mut cli2 = CliOpts::parse_from(&["totebag_test", "src", "LICENSE", "README.md", "hoge.zip"]);
+        let r2 = cli2.run_mode();
+        assert!(r2.is_ok());
+        assert_eq!(cli2.run_mode().unwrap(), RunMode::Archive);
 
-        let a3 = create_archiver(&PathBuf::from("results/test.tar.bz2"));
-        assert!(a3.is_ok());
-        assert_eq!(a3.unwrap().format(), Format::TarBz2);
+        let mut cli3 = CliOpts::parse_from(&["totebag_test", "src.zip", "LICENSE.tar", "README.tar.bz2", "hoge.rar"]);
+        let r3 = cli3.run_mode();
+        assert!(r3.is_ok());
+        assert_eq!(cli3.run_mode().unwrap(), RunMode::Extract);
 
-        let a4 = create_archiver(&PathBuf::from("results/test.zip"));
-        assert!(a4.is_ok());
-        assert_eq!(a4.unwrap().format(), Format::Zip);
+        let mut cli4 = CliOpts::parse_from(&["totebag_test", "src.zip", "LICENSE.tar", "README.tar.bz2", "hoge.rar", "--mode", "list"]);
+        let r4 = cli3.run_mode();
+        assert!(r4.is_ok());
+        assert_eq!(cli4.run_mode().unwrap(), RunMode::List);
+    }
 
-        let a5 = create_archiver(&PathBuf::from("results/test.rar"));
-        assert!(a5.is_ok());
-        assert_eq!(a5.unwrap().format(), Format::Rar);
-
-        let a6 = create_archiver(&PathBuf::from("results/test.tar.xz"));
-        assert!(a6.is_ok());
-        assert_eq!(a6.unwrap().format(), Format::TarXz);
-
-        let a7 = create_archiver(&PathBuf::from("results/test.7z"));
-        assert!(a7.is_ok());
-        assert_eq!(a7.unwrap().format(), Format::SevenZ);
-
-        let a8 = create_archiver(&PathBuf::from("results/test.tar.zst"));
-        assert!(a8.is_ok());
-        assert_eq!(a8.unwrap().format(), Format::TarZstd);
-
-        let a9 = create_archiver(&PathBuf::from("results/test.lha"));
-        assert!(a9.is_ok());
-        assert_eq!(a9.unwrap().format(), Format::LHA);
-
-        let a10 = create_archiver(&PathBuf::from("results/test.unknown"));
-        assert!(a10.is_err());
-        if let Err(e) = a10 {
-            if let ToteError::UnknownFormat(msg) = e {
-                assert_eq!(msg, "test.unknown: unknown format".to_string());
-            } else {
-                assert!(false);
-            }
-        }
+    #[test]
+    fn test_is_all_args_archives() {
+        assert!(is_all_args_archives(&[PathBuf::from("test.zip"), PathBuf::from("test.tar"), PathBuf::from("test.tar.gz"), PathBuf::from("test.tgz"), PathBuf::from("test.tar.bz2"), PathBuf::from("test.tbz2"), PathBuf::from("test.rar")]));
     }
 }
