@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use zip::{ZipWriter, write::FileOptions, ZipArchive};
+use zip::{ZipWriter, write::FileOptions};
 
 pub fn create_zip(file: &File, src: &Path) -> io::Result<()> {
     let options = FileOptions::default().compression_method(zip::CompressionMethod::Stored).unix_permissions(0o755);
