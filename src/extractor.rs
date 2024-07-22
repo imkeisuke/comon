@@ -1,115 +1,155 @@
 use std::path::PathBuf;
-use clap::{Parser, ValueEnum};
 
-pub type Result<T> = std::result::Result<T, ToteError>;
+use crate::cli::{Result, ToteError};
+use crate::format::{find_format, Format};
+use crate::verboser::{create_verboser, Verboser};
+use crate::CliOpts;
 
-#[derive(Parser, Debug)]
-#[clap(
-    version, author, about,
-    arg_required_else_help = true,
-)]
-pub struct CliOpts {
-    #[clap(short = 'm', long = "mode", default_value_t = RunMode::Auto, value_name = "MODE", required = false, ignore_case = true, value_enum, help = "Mode of operation.")]
-    pub mode: RunMode,
-    #[clap(short = 'o', short_alias = 'd', long = "output", alias = "dest", value_name = "DEST", required = false, help = "Output file in archive mode, or output directory in extraction mode")]
-    pub output: Option<PathBuf>,
-    #[clap(long = "to-archive-name-dir", help = "extract files to DEST/ARCHIVE_NAME directory (extract mode).", default_value_t = false)]
-    pub to_archive_name_dir: bool,
-    #[clap(short = 'n', long = "no-recursive", help = "No recursive directory (archive mode).", default_value_t = false)]
-    pub no_recursive: bool,
-    #[clap(short = 'v', long = "verbose", help = "Display verbose output.", default_value_t = false)]
-    pub verbose: bool,
-    #[clap(long, help = "Overwrite existing files.")]
+mod lha;
+mod rar;
+mod sevenz;
+mod tar;
+mod zip;
+
+pub struct ExtractorOpts {
+    pub dest: PathBuf,
+    pub use_archive_name_dir: bool,
     pub overwrite: bool,
-    #[clap(value_name = "ARGUMENTS", help = "List of files or directories to be processed.")]
-    pub args: Vec<PathBuf>,
+    pub v: Box<dyn Verboser>,
 }
 
-impl CliOpts {
-    pub fn run_mode(&mut self) -> Result<RunMode> {
-        if self.args.len() == 0 {
-            return Err(ToteError::NoArgumentsGiven)
+impl ExtractorOpts {
+    pub fn new(opts: &CliOpts) -> ExtractorOpts {
+        let d = opts.output.clone();
+        ExtractorOpts {
+            dest: d.unwrap_or_else(|| PathBuf::from(".")),
+            use_archive_name_dir: opts.to_archive_name_dir,
+            overwrite: opts.overwrite,
+            v: create_verboser(opts.verbose),
         }
-        if self.mode == RunMode::Auto {
-            if is_all_args_archives(&self.args) {
-                self.mode = RunMode::Extract;
-                Ok(RunMode::Extract)
-            } else {
-                self.mode = RunMode::Archive;
-                Ok(RunMode::Archive)
-            }
+    }
+
+    /// Returns the base of the destination directory for the archive file.
+    /// The target is the archive file name of source.
+    pub fn destination(&self, target: &PathBuf) -> PathBuf {
+        if self.use_archive_name_dir {
+            let file_name = target.file_name().unwrap().to_str().unwrap();
+            let ext = target.extension().unwrap().to_str().unwrap();
+            let dir_name = file_name
+                .trim_end_matches(ext)
+                .trim_end_matches(".")
+                .to_string();
+            self.dest.join(dir_name)
         } else {
-            Ok(self.mode)
+            self.dest.clone()
         }
     }
 }
 
-fn is_all_args_archives(args: &[PathBuf]) -> bool {
-    args.iter().all(|arg| {
-        let name = arg.to_str().unwrap().to_lowercase();
-        let exts = vec![".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".rar", ".jar", ".war", ".ear", "7z", ];
-        for ext in exts.iter() {
-            if name.ends_with(ext) {
-                return true
+pub trait Extractor {
+    fn list_archives(&self, archive_file: PathBuf) -> Result<Vec<String>>;
+    fn perform(&self, archive_file: PathBuf, opts: &ExtractorOpts) -> Result<()>;
+    fn format(&self) -> Format;
+}
+
+pub fn create_extractor(file: &PathBuf) -> Result<Box<dyn Extractor>> {
+    let format = find_format(file.file_name());
+    match format {
+        Ok(format) => {
+            return match format {
+                Format::Zip => Ok(Box::new(zip::ZipExtractor {})),
+                Format::Rar => Ok(Box::new(rar::RarExtractor {})),
+                Format::Tar => Ok(Box::new(tar::TarExtractor {})),
+                Format::TarGz => Ok(Box::new(tar::TarGzExtractor {})),
+                Format::TarBz2 => Ok(Box::new(tar::TarBz2Extractor {})),
+                Format::TarXz => Ok(Box::new(tar::TarXzExtractor {})),
+                Format::TarZstd => Ok(Box::new(tar::TarZstdExtractor {})),
+                Format::LHA => Ok(Box::new(lha::LhaExtractor {})),
+                Format::SevenZ => Ok(Box::new(sevenz::SevenZExtractor {})),
+                Format::Unknown(s) => Err(ToteError::UnknownFormat(format!(
+                    "{}: unsupported format",
+                    s
+                ))),
             }
         }
-        return false
-    })
+        Err(msg) => Err(msg),
+    }
 }
 
-#[derive(Debug, Clone, ValueEnum, PartialEq, Copy)]
-pub enum RunMode {
-    Auto,
-    Archive,
-    Extract,
-    List,
-}
-
-#[derive(Debug)]
-pub enum ToteError {
-    NoArgumentsGiven,
-    FileNotFound(PathBuf),
-    FileExists(PathBuf),
-    IO(std::io::Error),
-    Archiver(String),
-    UnsupportedFormat(String),
-    UnknownFormat(String),
-    Unknown(String),
-    Fatal(Box<dyn std::error::Error>)
+pub fn extractor_info(
+    extractor: &Box<dyn Extractor>,
+    target: &PathBuf,
+    opts: &ExtractorOpts,
+) -> String {
+    format!(
+        "Format: {:?}\nFile: {:?}\nDestination: {:?}",
+        extractor.format(),
+        target,
+        opts.dest,
+    )
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-    use clap::Parser;
-
     use super::*;
 
     #[test]
-    fn test_find_mode() {
-        let mut cli1 = CliOpts::parse_from(&["totebag_test", "src", "LICENSE", "README.md", "Cargo.toml"]);
-        let r1 = cli1.run_mode();
-        assert!(r1.is_ok());
-        assert_eq!(r1.unwrap(), RunMode::Archive);
+    fn test_destination() {
+        let opts1 = ExtractorOpts {
+            dest: PathBuf::from("."),
+            use_archive_name_dir: true,
+            overwrite: false,
+            v: create_verboser(false),
+        };
+        let target = PathBuf::from("/tmp/archive.zip");
+        assert_eq!(opts1.destination(&target), PathBuf::from("./archive"));
 
-        let mut cli2 = CliOpts::parse_from(&["totebag_test", "src", "LICENSE", "README.md", "hoge.zip"]);
-        let r2 = cli2.run_mode();
-        assert!(r2.is_ok());
-        assert_eq!(cli2.run_mode().unwrap(), RunMode::Archive);
-
-        let mut cli3 = CliOpts::parse_from(&["totebag_test", "src.zip", "LICENSE.tar", "README.tar.bz2", "hoge.rar"]);
-        let r3 = cli3.run_mode();
-        assert!(r3.is_ok());
-        assert_eq!(cli3.run_mode().unwrap(), RunMode::Extract);
-
-        let mut cli4 = CliOpts::parse_from(&["totebag_test", "src.zip", "LICENSE.tar", "README.tar.bz2", "hoge.rar", "--mode", "list"]);
-        let r4 = cli3.run_mode();
-        assert!(r4.is_ok());
-        assert_eq!(cli4.run_mode().unwrap(), RunMode::List);
+        let opts2 = ExtractorOpts {
+            dest: PathBuf::from("."),
+            use_archive_name_dir: false,
+            overwrite: false,
+            v: create_verboser(false),
+        };
+        let target = PathBuf::from("/tmp/archive.zip");
+        assert_eq!(opts2.destination(&target), PathBuf::from("."));
     }
 
     #[test]
-    fn test_is_all_args_archives() {
-        assert!(is_all_args_archives(&[PathBuf::from("test.zip"), PathBuf::from("test.tar"), PathBuf::from("test.tar.gz"), PathBuf::from("test.tgz"), PathBuf::from("test.tar.bz2"), PathBuf::from("test.tbz2"), PathBuf::from("test.rar")]));
+    fn test_create_extractor() {
+        let e1 = create_extractor(&PathBuf::from("results/test.zip"));
+        assert!(e1.is_ok());
+        assert_eq!(e1.unwrap().format(), Format::Zip);
+
+        let e2 = create_extractor(&PathBuf::from("results/test.tar"));
+        assert!(e2.is_ok());
+        assert_eq!(e2.unwrap().format(), Format::Tar);
+
+        let e3 = create_extractor(&PathBuf::from("results/test.tgz"));
+        assert!(e3.is_ok());
+        assert_eq!(e3.unwrap().format(), Format::TarGz);
+
+        let e4 = create_extractor(&PathBuf::from("results/test.tbz2"));
+        assert!(e4.is_ok());
+        assert_eq!(e4.unwrap().format(), Format::TarBz2);
+
+        let e5 = create_extractor(&PathBuf::from("results/test.rar"));
+        assert!(e5.is_ok());
+        assert_eq!(e5.unwrap().format(), Format::Rar);
+
+        let e6 = create_extractor(&PathBuf::from("results/test.tar.xz"));
+        assert!(e6.is_ok());
+        assert_eq!(e6.unwrap().format(), Format::TarXz);
+
+        let e7 = create_extractor(&PathBuf::from("results/test.7z"));
+        assert!(e7.is_ok());
+        assert_eq!(e7.unwrap().format(), Format::SevenZ);
+
+        let e8 = create_extractor(&PathBuf::from("results/test.unknown"));
+        assert!(e8.is_err());
+        if let Err(ToteError::UnknownFormat(msg)) = e8 {
+            assert_eq!(msg, "test.unknown: unsupported format".to_string());
+        } else {
+            assert!(false);
+        }
     }
 }
