@@ -35,4 +35,3 @@ pub enum RunMode {
     Archive,
     Extract,
 }
-
