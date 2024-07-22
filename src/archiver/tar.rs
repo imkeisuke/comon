@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::Path;
-use tar::{Builder, Archive};
+use tar::Builder;
 use bzip2::write::BzEncoder;
 use flate2::Compression;
 
