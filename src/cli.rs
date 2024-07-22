@@ -36,9 +36,3 @@ pub enum RunMode {
     Extract,
 }
 
-#[derive(Debug)]
-pub enum ToteError {
-    IO(std::io::Error),
-    UnknownFormat(String),
-    FileExists(PathBuf),
-}
