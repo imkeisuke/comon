@@ -1,63 +1,108 @@
+#[cfg(target_os = "windows")]
+use os::windows::*;
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use os::linux::*;
+
 use std::fs::File;
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
-use zip::{ZipWriter, write::FileOptions, ZipArchive};
-use walkdir::WalkDir;
+use std::path::PathBuf;
+use std::io::{BufReader, Write, Seek};
+use zip::ZipWriter;
 
-pub struct ZipArchiver;
+use crate::archiver::{Archiver, Format, ArchiverOpts};
+use crate::archiver::os;
+use crate::cli::{ToteError, Result};
 
-impl ZipArchiver {
-    pub fn new() -> Self {
-        ZipArchiver
-    }
+pub(super) struct ZipArchiver {
 }
 
-impl super::Archiver for ZipArchiver {
-    fn compress(&self, src: &Path, dest: &Path) -> Result<(), super::ToteError> {
-        let file = File::create(dest)?;
-        create_zip(&file, src)?;
-        Ok(())
-    }
-
-    fn decompress(&self, src: &Path, dest: &Path) -> Result<(), super::ToteError> {
-        let file = File::open(src)?;
-        extract_zip(&file, dest)?;
-        Ok(())
-    }
-}
-
-fn create_zip(file: &File, src: &Path) -> io::Result<()> {
-    let options = FileOptions::default().compression_method(zip::CompressionMethod::Stored).unix_permissions(0o755);
-    let mut zip = ZipWriter::new(file);
-
-    for entry in WalkDir::new(src).into_iter().filter_map(Result::ok) {
-        let path = entry.path();
-        if path.is_file() {
-            let name = path.strip_prefix(src)?;
-            zip.start_file(name.to_string_lossy(), options)?;
-            let mut file = File::open(path)?;
-            io::copy(&mut file, &mut zip)?;
-        }
-    }
-
-    zip.finish()?;
-    Ok(())
-}
-
-fn extract_zip(file: &File, dest: &Path) -> io::Result<()> {
-    let mut archive = ZipArchive::new(file)?;
-    for i in 0..archive.len() {
-        let mut zip_file = archive.by_index(i)?;
-        let file_path = dest.join(zip_file.mangled_name());
-        if zip_file.name().ends_with('/') {
-            std::fs::create_dir_all(&file_path)?;
-        } else {
-            if let Some(parent) = file_path.parent() {
-                std::fs::create_dir_all(parent)?;
+impl Archiver for  ZipArchiver {
+    fn perform(&self, inout: &ArchiverOpts) -> Result<()> {
+        match inout.destination() {
+            Err(e) =>  Err(e),
+            Ok(file) => {
+                write_to_zip(file, inout.targets(), inout.recursive)
             }
-            let mut outfile = File::create(&file_path)?;
-            std::io::copy(&mut zip_file, &mut outfile)?;
+        }
+    }
+    
+    fn format(&self) -> Format {
+        Format::Zip
+    }
+}
+
+fn process_dir<W:Write+Seek> (zw: &mut ZipWriter<W>, target: PathBuf) -> Result<()> {
+    for entry in target.read_dir().unwrap() {
+        if let Ok(e) = entry {
+            let p = e.path();
+            if p.is_dir() {
+                process_dir(zw, e.path())?
+            } else if p.is_file() {
+                process_file(zw, e.path())?
+            }
         }
     }
     Ok(())
+}
+
+fn process_file<W:Write+Seek> (zw: &mut ZipWriter<W>, target: PathBuf) -> Result<()> {
+    let name = target.to_str().unwrap();
+    let opts = create(&target);
+    if let Err(e) = zw.start_file(name, opts) {
+        return Err(ToteError::Archiver(e.to_string()));
+    }
+    let mut file = BufReader::new(File::open(target).unwrap());
+    if let Err(e) = std::io::copy(&mut file, zw) {
+        return Err(ToteError::IO(e))
+    }
+    Ok(())
+}
+
+fn write_to_zip(dest: File, targets: Vec<PathBuf>, recursive: bool) -> Result<()> {
+    let mut zw = zip::ZipWriter::new(dest);
+    for target in targets {
+        let path = target.as_path();
+        if path.is_dir() && recursive {
+            process_dir(&mut zw, path.to_path_buf())?
+        } else {
+            process_file(&mut zw, path.to_path_buf())?
+        }
+    }
+    if let Err(e) = zw.finish() {
+        return Err(ToteError::Archiver(e.to_string()));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run_test<F>(f: F)
+    where
+        F: FnOnce(),
+    {
+        // setup(); // 予めやりたい処理
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+        teardown(); // 後片付け処理
+    
+        if let Err(err) = result {
+            std::panic::resume_unwind(err);
+        }
+    }
+    
+    #[test]
+    fn test_zip() {
+        run_test(|| {
+            let archiver = ZipArchiver{};
+            let inout = ArchiverOpts::create(PathBuf::from("results/test.zip"), vec![PathBuf::from("src"), PathBuf::from("Cargo.toml")], true, true, false);
+            let result = archiver.perform(&inout);
+            assert!(result.is_ok());
+            assert_eq!(archiver.format(), Format::Zip);
+        });
+    }
+
+    fn teardown() {
+        let _ = std::fs::remove_file("results/test.zip");
+    }
 }
