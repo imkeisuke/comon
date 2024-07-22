@@ -12,9 +12,19 @@
 ## Usage
 ```sh
 Comon [OPTIONS] <ARGUMENTS...>
-OPTIONS
- -h, --help   Print this help message
-ARGUMENTS
+ファイルやディレクトリを様々な形式で圧縮・解凍するツールです。
+
+使い方: totebag [オプション] [引数]...
+
+引数:
+  [引数]...      処理するファイルやディレクトリのリスト
+
+オプション:
+  -m, --mode <MODE>          操作モードを指定します。 [デフォルト: auto] [可能な値: auto, archive, extract, list]
+  -o, --output <DEST>        圧縮モードでは出力ファイル、解凍モードでは出力ディレクトリを指定します
+  -v, --verbose              詳細な出力を表示します
+  -h, --help                 ヘルプを表示します
+
   
 ```
 ## About
