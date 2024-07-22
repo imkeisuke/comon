@@ -1,5 +1,6 @@
 use std::fmt;
-use zip::ZipError;
+use zip::result::ZipError;
+
 
 #[derive(Debug)]
 pub enum ToteError {
