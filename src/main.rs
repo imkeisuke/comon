@@ -1,51 +1,126 @@
+use archiver::{archiver_info, ArchiverOpts};
+use clap::Parser;
+use cli::*;
+use cli::{RunMode, ToteError};
+use extractor::{extractor_info, ExtractorOpts};
+
 mod archiver;
+mod cli;
+mod extractor;
 mod format;
-mod tote_error;
+mod verboser;
 
-use crate::archiver::{create_archiver, Archiver};
-use crate::format::detect_format;
-use clap::{Parser, Subcommand};
-use std::path::PathBuf;
-
-#[derive(Parser)]
-#[command(name = "Comon")]
-#[command(about = "A simple archiving utility", long_about = None)]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
+fn perform(mut opts: CliOpts) -> Result<()> {
+    match opts.run_mode() {
+        Ok(RunMode::Archive) => return perform_archive(opts),
+        Ok(RunMode::Extract) => return perform_extract(opts),
+        Ok(RunMode::List) => return perform_list(opts),
+        Ok(RunMode::Auto) => {
+            return Err(ToteError::Unknown(
+                "cannot distinguish archiving and extracting".to_string(),
+            ))
+        }
+        Err(e) => {
+            return Err(e);
+        }
+    };
 }
 
-#[derive(Subcommand)]
-enum Commands {
-    Compress {
-        #[arg(short, long)]
-        format: String,
-        #[arg(short, long)]
-        src: PathBuf,
-        #[arg(short, long)]
-        dest: PathBuf,
-    },
-    Decompress {
-        #[arg(short, long)]
-        src: PathBuf,
-        #[arg(short, long)]
-        dest: PathBuf,
-    },
+fn perform_extract(opts: CliOpts) -> Result<()> {
+    let args = opts.args.clone();
+    let extract_opts = ExtractorOpts::new(&opts);
+    for arg in args.iter() {
+        let extractor = extractor::create_extractor(arg).unwrap();
+        let target = arg.to_path_buf();
+        extract_opts
+            .v
+            .verbose(extractor_info(&extractor, &target, &extract_opts));
+        extractor.perform(target, &extract_opts)?;
+    }
+    Ok(())
 }
 
-fn main() {
-    let cli = Cli::parse();
+fn perform_list(opts: CliOpts) -> Result<()> {
+    let args = opts.args.clone();
+    for arg in args.iter() {
+        if !arg.exists() {
+            return Err(ToteError::FileNotFound(arg.to_path_buf()));
+        }
+        let extractor = extractor::create_extractor(&arg).unwrap();
+        if args.len() > 1 {
+            println!("========== {:?} ========== \n", arg);
+        }
+        let files = extractor.list_archives(arg.to_path_buf()).unwrap();
+        for file in files.iter() {
+            println!("{}", file);
+        }
+    }
+    Ok(())
+}
 
-    match &cli.command {
-        Commands::Compress { format, src, dest } => {
-            let format = detect_format(format).unwrap();
-            let archiver = create_archiver(format).unwrap();
-            archiver.compress(src, dest).unwrap();
+fn perform_archive(opts: CliOpts) -> Result<()> {
+    let inout = ArchiverOpts::new(&opts);
+    match archiver::create_archiver(&opts.output.unwrap()) {
+        Ok(archiver) => {
+            inout.v.verbose(archiver_info(&archiver, &inout));
+            archiver.perform(&inout)
         }
-        Commands::Decompress { src, dest } => {
-            let format = detect_format(src.to_str().unwrap()).unwrap();
-            let archiver = create_archiver(format).unwrap();
-            archiver.decompress(src, dest).unwrap();
+        Err(e) => Err(e),
+    }
+}
+
+fn main() -> Result<()> {
+    match perform(CliOpts::parse()) {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            match e {
+                ToteError::NoArgumentsGiven => {
+                    println!("No arguments given. Use --help for usage.")
+                }
+                ToteError::FileNotFound(p) => println!("{}: file not found", p.to_str().unwrap()),
+                ToteError::FileExists(p) => {
+                    println!("{}: file already exists", p.to_str().unwrap())
+                }
+                ToteError::IO(e) => println!("IO error: {}", e),
+                ToteError::Archiver(s) => println!("Archive error: {}", s),
+                ToteError::UnknownFormat(f) => println!("{}: unknown format", f),
+                ToteError::UnsupportedFormat(f) => println!("{}: unsupported format", f),
+                ToteError::Fatal(e) => println!("Error: {}", e),
+                ToteError::Unknown(s) => println!("Unknown error: {}", s),
+            }
+            std::process::exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cli::RunMode;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_run() {
+        let opts = CliOpts::parse_from(&[
+            "totebag_test",
+            "-o",
+            "test.zip",
+            "src",
+            "LICENSE",
+            "README.md",
+            "Cargo.toml",
+        ]);
+        assert_eq!(opts.mode, RunMode::Auto);
+        assert_eq!(opts.output, Some(PathBuf::from("test.zip")));
+        assert_eq!(opts.args.len(), 4);
+        assert_eq!(
+            opts.args,
+            vec![
+                PathBuf::from("src"),
+                PathBuf::from("LICENSE"),
+                PathBuf::from("README.md"),
+                PathBuf::from("Cargo.toml")
+            ]
+        );
     }
 }
