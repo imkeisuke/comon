@@ -52,4 +52,12 @@ fn extract_zip(file: &File, dest: &Path) -> io::Result<()> {
         if zip_file.name().ends_with('/') {
             std::fs::create_dir_all(&file_path)?;
         } else {
-            if let Some(parent)
+            if let Some(parent) = file_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let mut outfile = File::create(&file_path)?;
+            std::io::copy(&mut zip_file, &mut outfile)?;
+        }
+    }
+    Ok(())
+}
