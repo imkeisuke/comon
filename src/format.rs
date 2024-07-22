@@ -1,4 +1,3 @@
-// format.rs
 use std::ffi::OsStr;
 
 #[derive(Debug, PartialEq)]
