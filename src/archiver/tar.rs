@@ -1,66 +1,97 @@
-// src/archiver/tar.rs
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use tar::{Builder, Archive};
+use flate2::write::{GzEncoder, BzEncoder};
 use flate2::Compression;
-use flate2::write::GzEncoder;
-use flate2::write::BzEncoder;
-use flate2::write::ZlibEncoder;
-use xz2::write::XzEncoder;
+use tar::{Builder, Archive};
 use crate::tote_error::ToteError;
 
-pub fn create_tar_gz_archive(src_dir: &Path, tar_gz_path: &Path) -> Result<(), ToteError> {
-    let tar_gz = File::create(tar_gz_path)?;
-    let enc = GzEncoder::new(tar_gz, Compression::default());
-    let mut tar = Builder::new(enc);
-    tar.append_dir_all(".", src_dir)?;
-    Ok(())
+pub struct TarArchiver {
+    format: crate::format::Format,
 }
 
-pub fn create_tar_bz2_archive(src_dir: &Path, tar_bz2_path: &Path) -> Result<(), ToteError> {
-    let tar_bz2 = File::create(tar_bz2_path)?;
-    let enc = BzEncoder::new(tar_bz2, Compression::default());
-    let mut tar = Builder::new(enc);
-    tar.append_dir_all(".", src_dir)?;
-    Ok(())
+impl TarArchiver {
+    pub fn new(format: crate::format::Format) -> Self {
+        TarArchiver { format }
+    }
+
+    fn create_tar<P: AsRef<Path>>(&self, src_dir: P, dest_file: P) -> Result<(), std::io::Error> {
+        let tar_file = File::create(dest_file)?;
+        let mut tar = Builder::new(tar_file);
+
+        tar.append_dir_all(".", src_dir)?;
+
+        Ok(())
+    }
+
+    fn create_tar_gz<P: AsRef<Path>>(&self, src_dir: P, dest_file: P) -> Result<(), std::io::Error> {
+        let tar_gz = File::create(dest_file)?;
+        let enc = GzEncoder::new(tar_gz, Compression::default());
+        let mut tar = Builder::new(enc);
+
+        tar.append_dir_all(".", src_dir)?;
+
+        Ok(())
+    }
+
+    fn create_tar_bz2<P: AsRef<Path>>(&self, src_dir: P, dest_file: P) -> Result<(), std::io::Error> {
+        let tar_bz2 = File::create(dest_file)?;
+        let enc = BzEncoder::new(tar_bz2, Compression::default());
+        let mut tar = Builder::new(enc);
+
+        tar.append_dir_all(".", src_dir)?;
+
+        Ok(())
+    }
+
+    fn extract_tar<P: AsRef<Path>>(&self, src_file: P, dest_dir: P) -> Result<(), std::io::Error> {
+        let tar_file = File::open(src_file)?;
+        let mut archive = Archive::new(tar_file);
+
+        archive.unpack(dest_dir)?;
+
+        Ok(())
+    }
+
+    fn extract_tar_gz<P: AsRef<Path>>(&self, src_file: P, dest_dir: P) -> Result<(), std::io::Error> {
+        let tar_gz = File::open(src_file)?;
+        let dec = flate2::read::GzDecoder::new(tar_gz);
+        let mut archive = Archive::new(dec);
+
+        archive.unpack(dest_dir)?;
+
+        Ok(())
+    }
+
+    fn extract_tar_bz2<P: AsRef<Path>>(&self, src_file: P, dest_dir: P) -> Result<(), std::io::Error> {
+        let tar_bz2 = File::open(src_file)?;
+        let dec = flate2::read::BzDecoder::new(tar_bz2);
+        let mut archive = Archive::new(dec);
+
+        archive.unpack(dest_dir)?;
+
+        Ok(())
+    }
 }
 
-pub fn create_tar_xz_archive(src_dir: &Path, tar_xz_path: &Path) -> Result<(), ToteError> {
-    let tar_xz = File::create(tar_xz_path)?;
-    let enc = XzEncoder::new(tar_xz, Compression::default());
-    let mut tar = Builder::new(enc);
-    tar.append_dir_all(".", src_dir)?;
-    Ok(())
-}
+impl crate::archiver::Archiver for TarArchiver {
+    fn compress(&self, src: &Path, dest: &Path) -> Result<(), ToteError> {
+        match self.format {
+            crate::format::Format::Tar => self.create_tar(src, dest)?,
+            crate::format::Format::TarGz => self.create_tar_gz(src, dest)?,
+            crate::format::Format::TarBz2 => self.create_tar_bz2(src, dest)?,
+            _ => return Err(ToteError::UnknownFormat(self.format.to_string())),
+        }
+        Ok(())
+    }
 
-pub fn extract_tar_archive(tar_path: &Path, dst_dir: &Path) -> Result<(), ToteError> {
-    let tar = File::open(tar_path)?;
-    let mut archive = Archive::new(tar);
-    archive.unpack(dst_dir)?;
-    Ok(())
-}
-
-pub fn extract_tar_gz_archive(tar_gz_path: &Path, dst_dir: &Path) -> Result<(), ToteError> {
-    let tar_gz = File::open(tar_gz_path)?;
-    let dec = GzDecoder::new(tar_gz);
-    let mut archive = Archive::new(dec);
-    archive.unpack(dst_dir)?;
-    Ok(())
-}
-
-pub fn extract_tar_bz2_archive(tar_bz2_path: &Path, dst_dir: &Path) -> Result<(), ToteError> {
-    let tar_bz2 = File::open(tar_bz2_path)?;
-    let dec = BzDecoder::new(tar_bz2);
-    let mut archive = Archive::new(dec);
-    archive.unpack(dst_dir)?;
-    Ok(())
-}
-
-pub fn extract_tar_xz_archive(tar_xz_path: &Path, dst_dir: &Path) -> Result<(), ToteError> {
-    let tar_xz = File::open(tar_xz_path)?;
-    let dec = XzDecoder::new(tar_xz);
-    let mut archive = Archive::new(dec);
-    archive.unpack(dst_dir)?;
-    Ok(())
+    fn decompress(&self, src: &Path, dest: &Path) -> Result<(), ToteError> {
+        match self.format {
+            crate::format::Format::Tar => self.extract_tar(src, dest)?,
+            crate::format::Format::TarGz => self.extract_tar_gz(src, dest)?,
+            crate::format::Format::TarBz2 => self.extract_tar_bz2(src, dest)?,
+            _ => return Err(ToteError::UnknownFormat(self.format.to_string())),
+        }
+        Ok(())
+    }
 }
